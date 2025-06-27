@@ -1,6 +1,6 @@
 [project]
 name = "fastmcp"
-dynamic = ["version"]
+version = "2.9.2.1"
 description = "The fast, Pythonic way to build MCP servers."
 authors = [{ name = "Jeremiah Lowin" }]
 dependencies = [
