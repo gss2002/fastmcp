@@ -82,6 +82,7 @@ class OAuthClientProvider(_MCPOAuthClientProvider):
         )
         self.code_verifier = code_verifier
         self.skip_registration = skip_registration
+        logger.warning(f"✅ fastmcp OAuthClientProvider initialized with skip_registration={skip_registration}")
 
     async def _discover_oauth_metadata(
         self, server_url: str
