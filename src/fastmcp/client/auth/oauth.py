@@ -376,6 +376,7 @@ def OAuth(
     additional_client_metadata: dict[str, Any] | None = None,
     use_pkce: bool = False,
     static_client_id: str | None = None,
+    skip_registration: bool = False,
 ) -> _MCPOAuthClientProvider:
     """
     Create an OAuthClientProvider for an MCP server with optional PKCE support and static client_id.
@@ -476,7 +477,7 @@ def OAuth(
         redirect_handler=redirect_handler,
         callback_handler=callback_handler,
         code_verifier=code_verifier,
-        skip_registration=use_pkce and static_client_id is not None,
+        skip_registration=skip_registration or (use_pkce and static_client_id is not None),
     )
 
     return oauth_provider
