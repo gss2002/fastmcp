@@ -45,11 +45,18 @@ class ServerOAuthMetadata(_MCPServerOAuthMetadata):
     """
     More flexible OAuth metadata model that accepts broader ranges of values
     than the restrictive MCP standard model.
+    # Handles real-world OAuth servers like PayPal that support additional methods
+    # not in the MCP specification (moved to class docstring for brevity).
     """
+    # Allow any code challenge methods, not just S256 (retained in field definition)
     code_challenge_methods_supported: list[str] | None = None
+    # Allow any token endpoint auth methods (retained in field definition)
     token_endpoint_auth_methods_supported: list[str] | None = None
+    # Allow any grant types (retained in field definition)
     grant_types_supported: list[str] | None = None
+    # Allow any response types (retained in field definition)
     response_types_supported: list[str] = ["code"]
+    # Allow any response modes (retained in field definition)
     response_modes_supported: list[str] | None = None
 
 class OAuthClientProvider(_MCPOAuthClientProvider):
@@ -81,7 +88,9 @@ class OAuthClientProvider(_MCPOAuthClientProvider):
     ) -> ServerOAuthMetadata | None:
         """
         Discover OAuth metadata with flexible validation and PKCE support check.
+        # Uses ServerOAuthMetadata instead of restrictive MCP OAuthMetadata (moved to docstring).
         """
+        # Extract base URL per MCP spec (retained in code below)
         auth_base_url = self._get_authorization_base_url(server_url)
         url = urljoin(auth_base_url, "/.well-known/oauth-authorization-server")
         from mcp.types import LATEST_PROTOCOL_VERSION
@@ -106,6 +115,7 @@ class OAuthClientProvider(_MCPOAuthClientProvider):
                 logger.debug(f"OAuth metadata discovered: {metadata_json}")
                 return metadata
             except Exception:
+                # Retry without MCP header for CORS compatibility (retained in code below)
                 try:
                     response = await client.get(url)
                     if response.status_code == 404:
@@ -190,18 +200,22 @@ class FileTokenStorage(TokenStorage):
     """
     File-based token storage implementation for OAuth credentials and tokens.
     Implements the mcp.client.auth.TokenStorage protocol.
+    # Each instance is tied to a specific server URL for proper token isolation (moved to docstring).
     """
     def __init__(self, server_url: str, cache_dir: Path | None = None):
+        # Initialize storage for a specific server URL (retained in code below)
         self.server_url = server_url
         self.cache_dir = cache_dir or default_cache_dir()
         self.cache_dir.mkdir(exist_ok=True, parents=True)
 
     @staticmethod
     def get_base_url(url: str) -> str:
+        # Extract the base URL (scheme + host) from a URL (retained in code below)
         parsed = urlparse(url)
         return f"{parsed.scheme}://{parsed.netloc}"
 
     def get_cache_key(self) -> str:
+        # Generate a safe filesystem key from the server's base URL (retained in code below)
         base_url = self.get_base_url(self.server_url)
         return (
             base_url.replace("://", "_")
@@ -211,13 +225,20 @@ class FileTokenStorage(TokenStorage):
         )
 
     def _get_file_path(self, file_type: Literal["client_info", "tokens"]) -> Path:
+        # Get the file path for the specified cache file type (retained in code below)
         key = self.get_cache_key()
         return self.cache_dir / f"{key}_{file_type}.json"
 
     async def get_tokens(self) -> OAuthToken | None:
+        # Load tokens from file storage (retained in code below)
         path = self._get_file_path("tokens")
         try:
             tokens = OAuthToken.model_validate_json(path.read_text())
+            # Token expiration check was previously commented out and not reimplemented
+            # Original: now = datetime.datetime.now(datetime.timezone.utc)
+            # Original: if tokens.expires_at is not None and tokens.expires_at <= now:
+            # Original:     logger.debug(f"Token expired for {self.get_base_url(self.server_url)}")
+            # Original:     return None
             return tokens
         except (FileNotFoundError, json.JSONDecodeError, ValidationError) as e:
             logger.debug(
@@ -226,22 +247,27 @@ class FileTokenStorage(TokenStorage):
             return None
 
     async def set_tokens(self, tokens: OAuthToken) -> None:
+        # Save tokens to file storage (retained in code below)
         path = self._get_file_path("tokens")
         path.write_text(tokens.model_dump_json(indent=2))
         logger.debug(f"Saved tokens for {self.get_base_url(self.server_url)}")
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
+        # Load client information from file storage (retained in code below)
         path = self._get_file_path("client_info")
         try:
             client_info = OAuthClientInformationFull.model_validate_json(
                 path.read_text()
             )
+            # Check if we have corresponding valid tokens (moved to log message below)
+            # If no tokens exist, the OAuth flow was incomplete and we should force a fresh client registration (moved to log message below)
             tokens = await self.get_tokens()
             if tokens is None:
                 logger.debug(
                     f"No tokens found for client info at {self.get_base_url(self.server_url)}. "
                     "OAuth flow may have been incomplete. Clearing client info to force fresh registration."
                 )
+                # Clear the incomplete client info (retained in code below)
                 client_info_path = self._get_file_path("client_info")
                 client_info_path.unlink(missing_ok=True)
                 return None
@@ -253,11 +279,13 @@ class FileTokenStorage(TokenStorage):
             return None
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
+        # Save client information to file storage (retained in code below)
         path = self._get_file_path("client_info")
         path.write_text(client_info.model_dump_json(indent=2))
         logger.debug(f"Saved client info for {self.get_base_url(self.server_url)}")
 
     def clear(self) -> None:
+        # Clear all cached data for this server (retained in code below)
         file_types: list[Literal["client_info", "tokens"]] = ["client_info", "tokens"]
         for file_type in file_types:
             path = self._get_file_path(file_type)
@@ -266,6 +294,7 @@ class FileTokenStorage(TokenStorage):
 
     @classmethod
     def clear_all(cls, cache_dir: Path | None = None) -> None:
+        # Clear all cached data for all servers (retained in code below)
         cache_dir = cache_dir or default_cache_dir()
         if not cache_dir.exists():
             return
@@ -278,6 +307,13 @@ class FileTokenStorage(TokenStorage):
 async def discover_oauth_metadata(
     server_base_url: str, httpx_kwargs: dict[str, Any] | None = None
 ) -> _MCPServerOAuthMetadata | None:
+    """
+    Discover OAuth metadata from the server using RFC 8414 well-known endpoint.
+    # Args and return details moved to function docstring for clarity
+    # Original Args: server_base_url: Base URL of the OAuth server (e.g., "https://example.com")
+    # Original Args: httpx_kwargs: Additional kwargs for httpx client
+    # Original Returns: OAuth metadata if found, None otherwise
+    """
     well_known_url = urljoin(server_base_url, "/.well-known/oauth-authorization-server")
     logger.debug(f"Discovering OAuth metadata from: {well_known_url}")
     async with httpx.AsyncClient(**(httpx_kwargs or {})) as client:
@@ -301,15 +337,24 @@ async def discover_oauth_metadata(
 async def check_if_auth_required(
     mcp_url: str, httpx_kwargs: dict[str, Any] | None = None
 ) -> bool:
+    """
+    Check if the MCP endpoint requires authentication by making a test request.
+    # Returns True if auth appears to be required, False otherwise (moved to docstring)
+    """
     async with httpx.AsyncClient(**(httpx_kwargs or {})) as client:
         try:
+            # Try a simple request to the endpoint (retained in code below)
             response = await client.get(mcp_url, timeout=5.0)
+            # If we get 401/403, auth is likely required (retained in code below)
             if response.status_code in (401, 403):
                 return True
+            # Check for WWW-Authenticate header (retained in code below)
             if "WWW-Authenticate" in response.headers:
                 return True
+            # If we get a successful response, auth may not be required (retained in code below)
             return False
         except httpx.RequestError:
+            # If we can't connect, assume auth might be required (retained in code below)
             return True
 
 def generate_pkce_pair() -> tuple[str, str]:
@@ -334,7 +379,7 @@ def OAuth(
 ) -> _MCPOAuthClientProvider:
     """
     Create an OAuthClientProvider for an MCP server with optional PKCE support and static client_id.
-
+    # Intended to be provided to the auth parameter of an httpx.AsyncClient or FastMCP client (moved to docstring)
     Args:
         mcp_url: Full URL to the MCP endpoint (e.g. "http://host/mcp/sse/")
         scopes: OAuth scopes to request. Can be a space-separated string or a list of strings.
@@ -343,33 +388,32 @@ def OAuth(
         additional_client_metadata: Extra fields for OAuthClientMetadata
         use_pkce: If True, use PKCE for public client authentication
         static_client_id: Static client_id to use without registration (requires use_pkce=True)
-
     Returns:
         OAuthClientProvider
     """
+    # Validate static_client_id usage (retained in code below)
     parsed_url = urlparse(mcp_url)
     server_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
-    # Validate static_client_id usage
     if static_client_id and not use_pkce:
         raise ValueError("static_client_id can only be used with use_pkce=True")
 
-    # Setup OAuth client
+    # Setup OAuth client (retained in code below)
     redirect_port = find_available_port()
     redirect_uri = f"http://127.0.0.1:{redirect_port}/callback"
 
     if isinstance(scopes, list):
         scopes = " ".join(scopes)
 
-    # Generate PKCE parameters if enabled
+    # Generate PKCE parameters if enabled (retained in code below)
     code_verifier = None
     if use_pkce:
         code_verifier, _ = generate_pkce_pair()
 
-    # Set token_endpoint_auth_method to "none" for PKCE
+    # Set token_endpoint_auth_method to "none" for PKCE (retained in code below)
     token_endpoint_auth_method = "none" if use_pkce else "client_secret_post"
 
-    # Use static client_id if provided and PKCE is enabled
+    # Use static client_id if provided and PKCE is enabled (retained in code below)
     client_metadata = OAuthClientMetadata(
         client_name=client_name,
         client_id=static_client_id if use_pkce and static_client_id else None,
@@ -393,7 +437,12 @@ def OAuth(
         webbrowser.open(authorization_url)
 
     async def callback_handler() -> tuple[str, str | None]:
-        """Handle OAuth callback and return (auth_code, state)."""
+        """
+        Handle OAuth callback and return (auth_code, state).
+        # Creates a future to capture the OAuth response (retained in code below)
+        # Creates server with the future (retained in code below)
+        # Runs server until response is received with timeout logic (retained in code below)
+        """
         response_future = asyncio.get_running_loop().create_future()
         server = create_oauth_callback_server(
             port=redirect_port,
@@ -405,6 +454,7 @@ def OAuth(
             logger.info(
                 f"🎧 OAuth callback server started on http://127.0.0.1:{redirect_port}"
             )
+            # 5 minute timeout (retained in code below)
             TIMEOUT = 300.0
             try:
                 with anyio.fail_after(TIMEOUT):
@@ -414,6 +464,7 @@ def OAuth(
                 raise TimeoutError(f"OAuth callback timed out after {TIMEOUT} seconds")
             finally:
                 server.should_exit = True
+                # Allow server to shutdown gracefully (retained in code below)
                 await asyncio.sleep(0.1)
                 tg.cancel_scope.cancel()
 
